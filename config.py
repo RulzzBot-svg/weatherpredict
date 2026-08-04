@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -98,6 +99,7 @@ class Settings:
     target_date: str
     forecast_provider: str
     kalshi_base: str
+    state_path: Path
 
     def city_meta(self, city: str) -> dict:
         if city not in CITIES:
@@ -116,11 +118,15 @@ def load_settings() -> Settings:
     series_raw = os.getenv("KALSHI_SERIES", "").strip().upper()
     # Only honor an explicit series override when scanning a single city.
     series_override = series_raw if series_raw and len(cities) == 1 else None
+    state_path = Path(
+        os.getenv("STATE_PATH", "data/paper_book.json")
+    ).expanduser()
     return Settings(
         paper_bankroll=_float("PAPER_BANKROLL", 1000.0),
         stake_notional=_float("STAKE_NOTIONAL", 10.0),
         min_edge=_float("MIN_EDGE", 0.08),
-        loop_interval_seconds=_int("LOOP_INTERVAL_SECONDS", 60),
+        # Weather markets move slowly; 5 minutes is plenty for hands-off.
+        loop_interval_seconds=_int("LOOP_INTERVAL_SECONDS", 300),
         auto_bet=_bool("AUTO_BET", True),
         cities=cities,
         kalshi_series_override=series_override,
@@ -130,4 +136,5 @@ def load_settings() -> Settings:
             "KALSHI_BASE",
             "https://api.elections.kalshi.com/trade-api/v2",
         ).rstrip("/"),
+        state_path=state_path,
     )
