@@ -4,10 +4,13 @@ Kalshi **daily high-temperature** paper bot. Pulls an Open-Meteo **ensemble**
 forecast, turns it into integer °F probabilities, compares them to live
 `KXHIGH*` market mids, and papers YES when edge ≥ `MIN_EDGE`.
 
+Hands-off mode: persists the paper book, skips cities that already have an
+open bet, and auto-settles fills when Kalshi marks the market finalized.
+
 Moved out of [cryptodirectionpredict](https://github.com/RulzzBot-svg/cryptodirectionpredict)
 so the weather stack can evolve separately from the BTC 15m bot.
 
-## Quick start
+## Quick start (local)
 
 ```bash
 python3 -m venv .venv
@@ -17,35 +20,63 @@ cp .env.example .env
 python main.py --once
 ```
 
-Loop every minute:
+Loop forever (same as Render):
 
 ```bash
 python main.py
 ```
 
-## What it does
+## Set-and-forget on Render (do once)
 
-1. Resolves `TARGET_DATE` (`today` / `tomorrow` / `YYYY-MM-DD`) per city TZ
-2. Scans `CITY` — one city, a comma list, or `ALL` (`NYC`, `CHI`, `MIA`, `LAX`)
-3. Pulls Open-Meteo ensemble daily max temps (°F)
-4. Builds an integer °F probability mass function (ensemble + light Normal blend)
-5. Loads open Kalshi contracts for each city’s series on that date
-6. Scores each contract’s model P(YES) vs market mid
-7. Papers YES on the best edge if `AUTO_BET=true` and edge ≥ `MIN_EDGE`
+You need a **new** Background Worker for this repo (don’t reuse the BTC one).
 
-Example status:
+### Option A — Blueprint (easiest)
 
-```text
-NYC Central Park | high 2026-08-05 | ensemble mean 85.6°F [81.5, 88.7] n=31
-Kalshi open contracts: 6 (KXHIGHNY)
-  82° to 83°       model  28.4%  mkt  44.0%  edge -15.6¢
-  80° to 81°       model  18.1%  mkt  34.5%  edge -16.4¢
-Advice: SKIP — best edge ...
-```
+1. Push/merge to `main`
+2. Render → **New → Blueprint** → select `weatherpredict`
+3. Confirm `render.yaml` (`weatherpredict-paper` worker + 1GB disk)
+4. Deploy
+
+Auto-deploys on every push to `main` after that.
+
+### Option B — Manual worker
+
+1. Render → **New → Background Worker** → `RulzzBot-svg/weatherpredict`
+2. **Build:** `pip install -r requirements.txt`
+3. **Start:** `python main.py`
+4. Add a **persistent disk** mounted at `/var/data` (keeps bankroll/fills across restarts)
+5. Env vars:
+
+| Key | Value |
+|-----|-------|
+| `PYTHONUNBUFFERED` | `1` |
+| `STATE_PATH` | `/var/data/paper_book.json` |
+| `CITY` | `ALL` |
+| `TARGET_DATE` | `tomorrow` |
+| `MIN_EDGE` | `0.08` |
+| `STAKE_NOTIONAL` | `10` |
+| `PAPER_BANKROLL` | `1000` |
+| `AUTO_BET` | `true` |
+| `LOOP_INTERVAL_SECONDS` | `300` |
+
+Leave it running. Check logs occasionally; no daily babysitting required.
+
+## What it does each loop
+
+1. Settles any open paper fills whose Kalshi markets are `finalized`
+2. For each city in `CITY` (`ALL` = NYC/CHI/MIA/LAX):
+   - Skips if that city already has an open bet for the target date
+   - Forecast → integer °F PMF → score open `KXHIGH*` contracts
+   - Papers YES on best edge if `AUTO_BET=true` and edge ≥ `MIN_EDGE`
+3. Sleeps `LOOP_INTERVAL_SECONDS` (default 5 minutes)
+
+State file: `STATE_PATH` (default `data/paper_book.json`).
 
 ## Settlement rules (important)
 
-Kalshi city highs settle on the **NWS CLI integer high** at the listed station:
+Kalshi city highs settle on the **NWS CLI integer high** at the listed station.
+This bot reads Kalshi’s own finalized `result` / `expiration_value` so paper
+P/L matches the exchange.
 
 | strike_type | YES if |
 |-------------|--------|
@@ -62,16 +93,7 @@ Kalshi city highs settle on the **NWS CLI integer high** at the listed station:
 
 ## Config
 
-See `.env.example`. Useful knobs:
-
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `CITY` | `ALL` | `NYC` / `CHI` / `MIA` / `LAX` / `NYC,CHI` / `ALL` |
-| `KALSHI_SERIES` | city default | only applied when `CITY` is a single city |
-| `TARGET_DATE` | `tomorrow` | `today` / `tomorrow` / ISO date |
-| `MIN_EDGE` | `0.08` | 8¢ model − market |
-| `STAKE_NOTIONAL` | `10` | paper dollars per fill |
-| `AUTO_BET` | `true` | paper fills when edged |
+See `.env.example`.
 
 ## Sanity check
 
@@ -83,6 +105,6 @@ python main.py --once
 ## Not included yet
 
 - Live Kalshi order placement (paper only)
-- Fee / ask-aware entry
+- Fee-aware sizing / liquidity filters beyond ask entry
+- Telegram / email alerts
 - Historical calibration / CLV tracking
-- NWS CLI settlement auto-resolver

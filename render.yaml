@@ -1,0 +1,35 @@
+# One-click / Blueprint deploy for hands-off paper trading.
+# Dashboard: New > Blueprint > this repo
+services:
+  - type: worker
+    name: weatherpredict-paper
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    disk:
+      name: weatherpredict-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: STATE_PATH
+        value: /var/data/paper_book.json
+      - key: CITY
+        value: ALL
+      - key: TARGET_DATE
+        value: tomorrow
+      - key: MIN_EDGE
+        value: "0.08"
+      - key: STAKE_NOTIONAL
+        value: "10"
+      - key: PAPER_BANKROLL
+        value: "1000"
+      - key: AUTO_BET
+        value: "true"
+      - key: LOOP_INTERVAL_SECONDS
+        value: "300"

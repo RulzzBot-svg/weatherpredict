@@ -137,3 +137,30 @@ def resolve_target_date(spec: str, timezone_name: str) -> date:
 
         return now_local + timedelta(days=1)
     return date.fromisoformat(spec)
+
+
+@dataclass(frozen=True)
+class MarketSettlement:
+    ticker: str
+    status: str
+    result: Optional[str]  # yes | no | None
+    expiration_value: Optional[float]
+
+
+def fetch_market_settlement(
+    base_url: str,
+    ticker: str,
+    timeout: float = 20.0,
+) -> MarketSettlement:
+    """Fetch one market; used to settle paper fills when Kalshi finalizes."""
+    url = f"{base_url}/markets/{ticker}"
+    resp = requests.get(url, timeout=timeout)
+    resp.raise_for_status()
+    m = resp.json().get("market") or resp.json()
+    exp = m.get("expiration_value")
+    return MarketSettlement(
+        ticker=ticker,
+        status=(m.get("status") or "").lower(),
+        result=(m.get("result") or None),
+        expiration_value=float(exp) if exp not in (None, "") else None,
+    )
